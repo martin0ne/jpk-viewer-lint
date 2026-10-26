@@ -1,14 +1,16 @@
 #!/usr/local/bin/python3
 # -*- coding: utf-8 -*-
 """
-jpk-viewer-lint v0.1 — przeglądanie i kontrola plików JPK_VAT z deklaracją.
+jpk-viewer-lint v0.1.1 — przeglądanie i kontrola plików JPK_VAT z deklaracją.
 JPK_V7M(3) i JPK_V7K(3) (od lutego 2026) oraz JPK_V7M(2) i JPK_V7K(2) (stare okresy).
 
-Zasady: praca LOKALNA (zero sieci w runtime — resolver blokuje http i liczy próby),
-walidacja względem oficjalnych schematów MF w schemat/, komunikaty po polsku,
-lint ≠ doradca podatkowy, plików nie wysyłamy.
+Zasady: praca LOKALNA (parser bez rozwijania encji i bez DTD; resolver blokuje
+każde http(s) i liczy próby), walidacja względem oficjalnych schematów MF w schemat/,
+komunikaty po polsku, lint ≠ doradca podatkowy, plików nie wysyłamy.
 
-Exit codes: 0 = OK (warningi dopuszczalne), 1 = błędy walidacji, 2 = błąd użycia/poza zakresem.
+Exit codes: 0 = OK (warningi dopuszczalne), 1 = błąd walidacji XSD/pliku,
+2 = nic nie zrobiono (zły plik, poza zakresem, sprzeczne parametry).
+Kontrola krzyżowa z rozbieżnością = WARNING i exit 0 (to nie błąd schematu).
 """
 
 import argparse
@@ -25,7 +27,7 @@ except ImportError:
     sys.exit(2)
 
 NAZWA = "jpk-viewer-lint"
-WERSJA = "0.1.0"
+WERSJA = "0.1.1"
 KATALOG = os.path.dirname(os.path.abspath(__file__))
 
 # ---------------------------------------------------------------------------
@@ -60,28 +62,39 @@ SIEC_PROBY = []
 
 
 class ZeroSieciowyResolver(etree.Resolver):
-    """Resolver: blokuje http(s) i policzy każdą próbę. Flaga pozwol_siec
-    tylko odnotowuje próbę (do pomiaru) — domyślnie nie ma sieci."""
+    """Resolver offline: każdą próbę sięgnięcia po http(s) liczy w SIEC_PROBY
+    i twardo blokuje (ValueError — walidacja pada, zamiast „cicho dojść do sieci").
+    Dla wszystkiego innego (relatywne importy schematów, file://) zwraca None —
+    encje zewnętrzne i tak nie są rozwijane (parser: resolve_entities=False,
+    load_dtd=False), więc file:// nie otwiera żadnego zasobu przy parsowaniu."""
 
     def resolve(self, url, pubid, context):
         u = str(url or "")
         if u.startswith("http://") or u.startswith("https://"):
             SIEC_PROBY.append(u)
-            if POZWOL_SIEC:
-                return None  # odnotowane, przepuść (domyślnie NIEUŻYWANE)
             raise ValueError(
                 "NARZĘDZIE PRACUJE OFFLINE: próba pobrania '%s' została zablokowana. "
-                "Wszystkie schematy leżą lokalnie w schemat/." % u)
+                "Wszystkie schematy leżą lokalnie w schemat/ (importy relatywne)." % u)
         return None
 
 
-POZWOL_SIEC = False
-
-
 def parser_offline():
-    p = etree.XMLParser(no_network=True)
+    """Parser bez sieci i bez rozwijania encji: resolve_entities=False +
+    load_dtd=False znaczy, że zewnętrzne encje DTD NIGDY nie są pobierane
+    (nawet file://). Encje zostają nierozwinięte i wykrywamy je po parsowaniu
+    (sprawdz_encje) — plik odrzucamy zamiast trieskać się na zawartość."""
+    p = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
     p.resolvers.add(ZeroSieciowyResolver())
     return p
+
+
+def sprawdz_encje(drzewo):
+    """Encje DTD (w tym zewnętrzne file://) → twardy die(2), nie walidacja."""
+    encje = [e.name for e in drzewo.getroot().iter(etree.Entity)]
+    if encje:
+        die("XML zawiera encje zewnętrzne — odrzucone (%s). Narzędzie nie rozwija "
+            "encji DTD (zasada zero sieci); usuń DTD/encje z pliku i wyeksportuj czysty XML."
+            % ", ".join("&%s" % e for e in encje[:3]), 2)
 
 
 def assertuj_offline(miejsce):
@@ -114,7 +127,14 @@ def wczytaj_schemat(rodzaj, wariant=None):
     if not os.path.exists(sciezka):
         die("brak schematu: %s (katalog schemat/ powinien być w repo)" % sciezka, 2)
     drzewo = etree.parse(sciezka, parser_offline())
-    schema = etree.XMLSchema(drzewo)
+    try:
+        schema = etree.XMLSchema(drzewo)
+    except etree.XMLSchemaParseError as e:
+        die("schemat %s nie wczytuje się: %s. Importy w schemat/ muszą być "
+            "relatywne (lokalne pliki) — jeśli schemaLocation wskazuje na http, "
+            "schemat trzeba naprawić." % (sciezka, str(e)[:200]), 2)
+    except etree.XMLSyntaxError as e:
+        die("schemat %s to nie poprawny XML: %s" % (sciezka, e), 2)
     dokumenty = {}
     for el in drzewo.iter(_SXSD + "element"):
         nazwa = el.get("name")
@@ -170,6 +190,7 @@ def wykryj_wersje(path):
     except etree.XMLSyntaxError as e:
         die("plik to nie poprawny XML: %s" % e, 1)
     root = drzewo.getroot()
+    sprawdz_encje(drzewo)
     if not root.tag.startswith("{"):
         die("plik bez namespace (%s) — to nie jest plik JPK. "
             "Poza zakresem v1." % root.tag, 2)
@@ -209,7 +230,6 @@ def sha256(sciezka):
     h = hashlib.sha256()
     with open(sciezka, "rb") as f:
         for blok in iter(lambda: f.read(65536), b""):
-            blok = f.read(65536) if False else blok
             h.update(blok)
     return h.hexdigest()
 
@@ -376,11 +396,15 @@ def ucieta(t, s):
     return t if len(t) <= s else t[: s - 1] + "…"
 
 
-def pokaz_podglad(drzewo, info, ns):
+def pokaz_podglad(drzewo, info, ns, hash_pliku=None):
     """podglad: ewidencja sprzedaży i zakupu -> czytelne tabele."""
+    print("NARZĘDZIE: %s v%s" % (NAZWA, WERSJA))
+    if hash_pliku:
+        print("SHA256: %s" % hash_pliku)
+    print("UWAGA: podgląd nie waliduje pliku — do walidacji uruchom sprawdz albo lint.")
     root = drzewo.getroot()
     if czy_signature(root):
-        print("pomijam podpis (ds:Signature) — nie dotyczy danych ewidencji")
+        print("plik podpisany (XAdES ds:Signature) — podgląd czyta treść, podpisu nie weryfikuję")
     ewidencja = root.find("{*}Ewidencja")
     if ewidencja is None:
         die("plik nie ma części ewidencyjnej (Ewidencja) — to część deklaracyjna; podgląd nie ma czego pokazać", 1)
@@ -434,11 +458,29 @@ def pokaz_podglad(drzewo, info, ns):
 # ---------------------------------------------------------------------------
 # Kontrole krzyżowe (lint)
 # ---------------------------------------------------------------------------
-# Kontrole: pole_dekl = (+) suma kolumn podanych, (−) minus kolumny z "minus".
-# Tylko pola będące CZYSTYMI SUMAMI (P_37, P_38, P_40..P_47, P_48) — P_10..P_36
-# i P_51.. P_53 zależą od decyzji rozliczeniowych, nie od ewidencji wprost.
+# Jedna lista źródłowa. Mapowanie pole deklaracji ↔ kolumny ewidencji ZGODNIE
+# z dokumentacją elementów w schemacie (schemat/v3/jpk_v7m.xsd, xsd:documentation;
+# te same definicje w jpk_v7k.xsd i schematach (2)):
+#   P_37: "Łączna wysokość podstawy opodatkowania. Suma kwot z P_10, P_11, P_13,
+#         P_15, P_17, P_19, P_21, P_22, P_23, P_25, P_27, P_29, P_31"
+#         → kolumny K_10, K_11, K_13, K_15, K_17, K_19, K_21, K_22, K_23, K_25,
+#           K_27, K_29, K_31 (K_17 = podstawa 8% — była pominięta, naprawione).
+#   P_38: "Suma kwot z P_16, P_18, P_20, P_24, P_26, P_28, P_30, P_32, P_33, P_34
+#         pomniejszona o kwotę z P_35, P_36 i P_360"
+#         → K_16, K_18, K_20, K_24, K_26, K_28, K_30, K_32, K_33, K_34
+#           minus K_35, K_36, K_360.
+#   P_48: "Suma kwot z P_39, P_41, P_43, P_44, P_45, P_46 i P_47"
+#         → P_39 (przeniesienie z poprzedniej deklaracji) + K_41, K_43, K_44,
+#           K_45, K_46, K_47.
+#   P_16..P_36 (pojedyncze): P_n = suma kolumny K_n z ewidencji (pełna ewidencja,
+#         BEZ wyłączeń — wyłączenie faktur FP dotyczy TYLKO sumy kontrolnej
+#         PodatekNalezny w SprzedazCtrl, patrz suma_kolumn).
+#   P_40..P_47 (pojedyncze): P_n = suma kolumny K_n z ewidencji zakupu.
+# Tylko pola będące CZYSTYMI SUMAMI — P_10..P_14, P_15, P_17, P_19, P_21..P_23,
+# P_25, P_27, P_29, P_31 (podstawy, wchodzą do P_37), P_39 (wejście do P_48)
+# i P_49..P_62 zależą od decyzji rozliczeniowych — patrz dygresje_jawne().
 KONTROLE_LISTA = [
-    ("P_37", ["K_10", "K_11", "K_13", "K_15", "K_19", "K_21", "K_22", "K_23", "K_25", "K_27", "K_29", "K_31"], []),
+    ("P_37", ["K_10", "K_11", "K_13", "K_15", "K_17", "K_19", "K_21", "K_22", "K_23", "K_25", "K_27", "K_29", "K_31"], []),
     ("P_38", ["K_16", "K_18", "K_20", "K_24", "K_26", "K_28", "K_30", "K_32", "K_33", "K_34"],
              ["K_35", "K_36", "K_360"]),
     ("P_16", ["K_16"], []), ("P_18", ["K_18"], []), ("P_20", ["K_20"], []),
@@ -453,7 +495,13 @@ KONTROLE_LISTA = [
 
 
 def suma_pola(dekl, pole):
+    """Wartość pola deklaracji albo sumy kontrolnej.
+    Pola P_* leżą pod Deklaracja→PozycjeSzczegolowe, sumy kontrolne
+    (LiczbaWierszySprzedazy/PodatekNalezny/...) bezpośrednio pod
+    SprzedazCtrl/ZakupCtrl — szukamy najpierw wprost, potem w PozycjeSzczegolowe."""
     el = dekl.find("{*}" + pole)
+    if el is None:
+        el = dekl.find("{*}PozycjeSzczegolowe/{*}" + pole)
     if el is None or el.text is None:
         return None
     try:
@@ -462,14 +510,30 @@ def suma_pola(dekl, pole):
         return None
 
 
-def suma_kolumn(ewidencja, kolumny):
+def suma_kolumn(ewidencja, kolumny, pomin_fp=False):
+    """Suma kolumn K_* z wierszy ewidencji. pomin_fp=True wyklucza wiersze
+    TypDokumentu=FP — używamy TYLKO dla PodatekNalezny w SprzedazCtrl, bo schemat
+    definiuje ją jako 'suma kwot z K_16, … pomniejszona o K_35, K_36, K_360,
+    Z WYŁĄCZENIEM faktur oznaczonych FP'. Pola deklaracji P_* liczone są
+    z pełnej ewidencji (bez wyłączeń)."""
     razem = Decimal("0")
-    for kol in kolumny:
-        for el in ewidencja.iter("{*}" + kol):
-            try:
-                razem += Decimal(el.text.strip().replace(",", "."))
-            except Exception:
-                pass
+    for el in ewidencja.iter():
+        if not isinstance(el.tag, str):
+            continue
+        lokalny = el.tag.split("}")[-1]
+        if lokalny not in ("SprzedazWiersz", "ZakupWiersz"):
+            continue
+        if pomin_fp:
+            td = el.find("{*}TypDokumentu")
+            if td is not None and (td.text or "").strip() == "FP":
+                continue
+        for kol in kolumny:
+            sub = el.find("{*}" + kol)
+            if sub is not None and sub.text:
+                try:
+                    razem += Decimal(sub.text.strip().replace(",", "."))
+                except Exception:
+                    pass
     return razem
 
 
@@ -525,10 +589,12 @@ def kontrole_krzyzowe(drzewo, info, ns):
                 n_ctrl, n_real, n_ctrl - n_real))
         pod = suma_pola(sprzedaz_ctrl, "PodatekNalezny")
         if pod is not None:
-            # P_38 = P_38-formula; liczymy z K_ (należny)
-            spodziewane = suma_kolumn(ewidencja, ["K_16", "K_18", "K_20", "K_24", "K_26", "K_28", "K_30", "K_32", "K_33", "K_34"]) - suma_kolumn(ewidencja, ["K_35", "K_36", "K_360"])
+            # Schemat: "suma kwot z K_16, … pomniejszona o K_35, K_36, K_360,
+            # z wyłączeniem faktur oznaczonych FP" → pomin_fp=True (inaczej
+            # plik z fakturami FP dostawałby fałszywy warning).
+            spodziewane = suma_kolumn(ewidencja, ["K_16", "K_18", "K_20", "K_24", "K_26", "K_28", "K_30", "K_32", "K_33", "K_34"], pomin_fp=True) - suma_kolumn(ewidencja, ["K_35", "K_36", "K_360"], pomin_fp=True)
             if pod != spodziewane:
-                warningi.append("PodatekNalezny (SprzedazCtrl) = %s, suma ewidencji = %s, różnica = %s" % (
+                warningi.append("PodatekNalezny (SprzedazCtrl) = %s, suma ewidencji (bez FP) = %s, różnica = %s" % (
                     pod, kwota(spodziewane), kwota(pod - spodziewane)))
     if zakup_ctrl is not None:
         n_ctrl = suma_pola(zakup_ctrl, "LiczbaWierszyZakupow")
@@ -545,22 +611,9 @@ def kontrole_krzyzowe(drzewo, info, ns):
     return warningi, dygresje
 
 
-KONTROLE_LISTA = [
-    ("P_37", ["K_10", "K_11", "K_13", "K_15", "K_19", "K_21", "K_22", "K_23", "K_25", "K_27", "K_29", "K_31"], []),
-    ("P_38", ["K_16", "K_18", "K_20", "K_24", "K_26", "K_28", "K_30", "K_32", "K_33", "K_34"], ["K_35", "K_36", "K_360"]),
-    ("P_16", ["K_16"], []), ("P_18", ["K_18"], []), ("P_20", ["K_20"], []),
-    ("P_24", ["K_24"], []), ("P_26", ["K_26"], []), ("P_28", ["K_28"], []),
-    ("P_30", ["K_30"], []), ("P_32", ["K_32"], []), ("P_33", ["K_33"], []),
-    ("P_34", ["K_34"], []), ("P_35", ["K_35"], []), ("P_36", ["K_36"], []),
-    ("P_40", ["K_40"], []), ("P_41", ["K_41"], []), ("P_42", ["K_42"], []),
-    ("P_43", ["K_43"], []), ("P_44", ["K_44"], []), ("P_45", ["K_45"], []),
-    ("P_46", ["K_46"], []), ("P_47", ["K_47"], []),
-    ("P_48", ["K_41", "K_43", "K_44", "K_45", "K_46", "K_47"], []),
-]
-
-
 def dygresje_jawne(drzewo, info, ns):
-    """Dygresje — informacja o tym, czego lint NIE ocenia w danym pliku."""
+    """Dygresje — informacja o tym, czego lint NIE ocenia w danym pliku.
+    Zakres kontroli czytamy z JEDNEJ listy źródłowej (KONTROLE_LISTA)."""
     root = drzewo.getroot()
     dekl = root.find("{*}Deklaracja")
     ewidencja = root.find("{*}Ewidencja")
@@ -578,7 +631,16 @@ def dygresje_jawne(drzewo, info, ns):
         suma_sprzedazy = suma_kolumn(ewidencja, ["K_19", "K_15", "K_17", "K_10"])
         if sprzedaz and suma_sprzedazy == 0:
             dygresje.append("plik zerowy (sprzedaż 0) — to może być zgodne z prawdą (firma bez obrotu); lint tego nie ocenia")
-    dygresje.append("kontrole krzyżowe pokrywają tylko pola będące CZYSTYMI SUMAMI ewidencji; P_10..P_14, P_21, P_22, P_23, P_25, P_27, P_29, P_31, P_39, P_49..P_62 zależą od decyzji rozliczeniowych — nie oceniam ich")
+    kontrolowane = sorted(pole for pole, _, _ in KONTROLE_LISTA)
+    nieoceniane = ["P_%d" % n for n in range(10, 49) if "P_%d" % n not in kontrolowane]
+    dygresje.append(
+        "kontrole krzyżowe pokrywają tylko pola będące CZYSTYMI SUMAMI ewidencji (%s); "
+        "pozostałe: %s zależą od decyzji rozliczeniowych albo wchodzą tylko do kontroli "
+        "P_37 (podstawy P_15/P_17/P_19, P_21, P_22, P_23, P_25, P_27, P_29, P_31) — nie oceniam ich osobno; "
+        "uwaga: P_39 jest WEJŚCIEM kontroli P_48 (przeniesienie z poprzedniej deklaracji) — "
+        "jeśli P_39 w pliku jest nieaktualne, warning na P_48 może wynikać z P_39, nie z naliczonego; "
+        "P_49..P_62 — decyzje rozliczeniowe, nie oceniam"
+        % (", ".join(kontrolowane), ", ".join(nieoceniane)))
     dygresje.append("lint ≠ doradca podatkowy: nie mówi, czy rozliczenie jest PRAWIDŁOWE, tylko czy suma ewidencji zgadza się z deklaracją")
     return dygresje
 
@@ -590,7 +652,7 @@ def etykieta_zaufania(info):
     return [
         "NARZĘDZIE: %s v%s" % (NAZWA, WERSJA),
         "CO SPRAWDZONO: struktura wg oficjalnego schematu MF %s (lokalnie, offline); suma ewidencji vs pola P_* będące czystymi sumami; liczniki wierszy; sumy kontrolne" % info["nazwa"],
-        "CZEGO NIE SPRAWDZONO: poprawności podatkowej (P_10..P_36, P_39..P_62 zależą od decyzji), zasadności korekty, obowiązków KSeF, podpisu XAdES, poprawności NIP wobec urzędu",
+        "CZEGO NIE SPRAWDZONO: poprawności podatkowej (P_10..P_36, P_39..P_62 zależą od decyzji), zasadności korekty, obowiązków KSeF, podpisu XAdES (podpis wycinamy z pamięci przed walidacją i NIE weryfikujemy go), poprawności NIP wobec urzędu",
     ]
 
 
@@ -639,6 +701,8 @@ def znajdz_wartosci_wyborow(xsd_tree):
 def cmd_diff(sciezka_v2, wyjscie=None):
     """Porównanie struktury (2)↔(3): pola dodane/usunięte + znaczniki."""
     drzewo_v2, info_v2, ns_v2 = wykryj_wersje(sciezka_pliku(sciezka_v2))
+    hash_wejscia = sha256(sciezka_pliku(sciezka_v2))
+    print("NARZĘDZIE: %s v%s | SHA256 wejścia: %s" % (NAZWA, WERSJA, hash_wejscia))
     if info_v2["wariant"] != "2":
         die("diff oczekuje pliku w wersji (2); podano %s" % info_v2["nazwa"], 2)
     typ = info_v2["typ"]
@@ -669,8 +733,6 @@ def cmd_diff(sciezka_v2, wyjscie=None):
         print("== %s ==" % sekcja)
         if dodane:
             print("  dodane w (3):   " + ", ".join(dodane))
-            for d in dodane:
-                doc = pole_doc(pola_v3, d, "")  # nie ma dokumentów tutaj — opis w schemacie
             linie.append("dodane: " + ", ".join(dodane))
         if usuniete:
             print("  usunięte z (3): " + ", ".join(usuniete))
@@ -704,15 +766,17 @@ def cmd_diff(sciezka_v2, wyjscie=None):
     for d in dodane_wszystkie:
         print("  %s: %s" % (d, pole_doc(dok_v3, d, "(bez opisu)")[:110]))
     assertuj_offline("diff")
+    for linia in etykieta_zaufania(info_v3):
+        print(linia)
     if wyjscie:
         import json
         raport = {
             "narzedzie": "%s v%s" % (NAZWA, WERSJA),
+            "wejscie": {"plik": os.path.abspath(sciezka_v2), "sha256": hash_wejscia},
             "porownanie": "%s -> %s" % (info_v2["nazwa"], info_v3["nazwa"]),
             "sekcje": {s: {"dodane_w3": sorted(set(pola_v3.get(s, [])) - set(pola_v2.get(s, []))),
-                            "usuniete_z3": sorted(set(pola_v2.get(s, [])) - set(pola_v3.get(s, [])))}
+                            "usuniete_w3": sorted(set(pola_v2.get(s, [])) - set(pola_v3.get(s, [])))}
                        for s in pola_v3},
-            "znaczniki_v3": {z: sorted(gdzie) for z, gdzie in []},
         }
         raport["znaczniki_v3"] = {}
         for znak in ("OFF", "BFK", "DI"):
@@ -734,7 +798,7 @@ def cmd_diff(sciezka_v2, wyjscie=None):
 # eksport: XLSX + PDF
 # ---------------------------------------------------------------------------
 def znajdz_font():
-    """Font z polskimi znakami (wzorzec: wystaw.py)."""
+    """Font z polskimi znakami (DejaVu/Arial, env JPK_FONT ma pierwszeństwo)."""
     kandydaci = []
     if os.environ.get("JPK_FONT"):
         kandydaci.append(os.environ["JPK_FONT"])
@@ -758,11 +822,35 @@ def znajdz_font():
     return None
 
 
+def wartosc_xlsx(pole, tekst):
+    """Kwoty i numery jako LICZBY (nie tekst) — Excel ma sumować, nie rzucać.
+    Kwotowe pola wg czy_kwotowe; Lp* jako int; reszta zostaje tekstem."""
+    tekst = (tekst or "").strip()
+    if tekst == "":
+        return ""
+    if czy_kwotowe(pole):
+        try:
+            return float(Decimal(tekst.replace(",", ".")))
+        except Exception:
+            return tekst
+    if pole in ("LpSprzedazy", "LpZakupu"):
+        try:
+            return int(tekst)
+        except Exception:
+            return tekst
+    return tekst
+
+
 def cmd_eksport(sciezka, wyjscie_xlsx, wyjscie_pdf=None):
-    drzewo, info, ns = wykryj_wersje(sciezka_pliku(sciezka))
+    drzewo, info, ns, schema, dokumenty = przygotuj(sciezka, "auto")
     root = drzewo.getroot()
     hash_pliku = sha256(sciezka)
-    dokumenty = wczytaj_schemat(ns, info["wariant"])[2]
+    print("Plik: %s" % os.path.abspath(sciezka))
+    print("Struktura: %s | SHA256: %s" % (info["nazwa"], hash_pliku))
+
+    # wyniki lint trafiają do PDF (eksport ≠ sam dane; README mówi wprost)
+    bledy = waliduj_xsd(drzewo, schema, dokumenty)
+    warningi, _ = kontrole_krzyzowe(drzewo, info, ns)
 
     ewidencja = root.find("{*}Ewidencja")
     dekl = root.find("{*}Deklaracja")
@@ -785,7 +873,7 @@ def cmd_eksport(sciezka, wyjscie_xlsx, wyjscie_pdf=None):
         ws_sprzedaz.append(kolumny)
         for el in sprzedaz:
             p = pola_wiersza("s", el)
-            ws_sprzedaz.append([p.get(k, "") for k in kolumny])
+            ws_sprzedaz.append([wartosc_xlsx(k, p.get(k, "")) for k in kolumny])
     ws_zakup = wb.create_sheet("Zakup")
     zakup = [d for d in ewidencja if isinstance(d.tag, str) and d.tag.endswith("}ZakupWiersz")]
     if zakup:
@@ -793,7 +881,7 @@ def cmd_eksport(sciezka, wyjscie_xlsx, wyjscie_pdf=None):
         ws_zakup.append(kolumny)
         for el in zakup:
             p = pola_wiersza("z", el)
-            ws_zakup.append([p.get(k, "") for k in kolumny])
+            ws_zakup.append([wartosc_xlsx(k, p.get(k, "")) for k in kolumny])
     ws_dekl = wb.create_sheet("Deklaracja")
     if dekl is not None:
         for el in dekl.iter():
@@ -801,17 +889,25 @@ def cmd_eksport(sciezka, wyjscie_xlsx, wyjscie_pdf=None):
                 lokalny = el.tag.split("}")[1]
                 if re.match(r"^P_\d+$", lokalny) and el.text:
                     opis = pole_doc(dokumenty, lokalny, "")
-                    ws_dekl.append([lokalny, el.text.strip(), opis])
+                    ws_dekl.append([lokalny, wartosc_xlsx(lokalny, el.text.strip()), opis])
     ws_raport = wb.create_sheet("Raport")
     for linia in etykieta_zaufania(info):
         ws_raport.append([linia])
     ws_raport.append(["SHA256 wejścia: " + hash_pliku])
     ws_raport.append(["Plik: " + os.path.abspath(sciezka)])
     ws_raport.append(["Struktura: " + info["nazwa"]])
+    if bledy:
+        ws_raport.append(["BŁĘDY SCHEMATU (XSD): %d" % len(bledy)])
+        for glos, _ in bledy:
+            ws_raport.append(["  - " + glos])
+    if warningi:
+        ws_raport.append(["WARNINGI LINT: %d" % len(warningi)])
+        for w in warningi:
+            ws_raport.append(["  - " + w])
     wb.save(wyjscie_xlsx)
     print("Zapisano XLSX: %s" % wyjscie_xlsx)
 
-    # --- PDF (fpdf2, font resolver jak w wystaw.py) ---
+    # --- PDF: dane + wyniki lint (to nie sam „raport lint", ale lint tam jest) ---
     if wyjscie_pdf:
         try:
             from fpdf import FPDF
@@ -824,7 +920,7 @@ def cmd_eksport(sciezka, wyjscie_xlsx, wyjscie_pdf=None):
         pdf.add_page()
         pdf.add_font("jpk", "", font)
         pdf.set_font("jpk", size=18)
-        pdf.cell(0, 10, "Raport JPK — %s" % info["nazwa"], new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 10, "Raport eksportu JPK — %s" % info["nazwa"], new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("jpk", size=10)
         pdf.cell(0, 7, "%s v%s | SHA256: %s" % (NAZWA, WERSJA, hash_pliku), new_x="LMARGIN", new_y="NEXT")
         pdf.multi_cell(0, 6, "\n".join(etykieta_zaufania(info)[1:]))
@@ -832,10 +928,27 @@ def cmd_eksport(sciezka, wyjscie_xlsx, wyjscie_pdf=None):
         pdf.set_font("jpk", size=12)
         pdf.cell(0, 8, "Ewidencja sprzedaży: %d wierszy" % len(sprzedaz), new_x="LMARGIN", new_y="NEXT")
         pdf.cell(0, 8, "Ewidencja zakupu: %d wierszy" % len(zakup), new_x="LMARGIN", new_y="NEXT")
+        if bledy:
+            pdf.cell(0, 8, "Błędy schematu (XSD): %d" % len(bledy), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("jpk", size=9)
+            for glos, _ in bledy:
+                pdf.multi_cell(0, 5, "  - " + glos, new_x="LMARGIN", new_y="NEXT")
+        if warningi:
+            pdf.cell(0, 8, "Warningi lint (suma ewidencji vs deklaracja): %d" % len(warningi), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("jpk", size=9)
+            for w in warningi:
+                pdf.multi_cell(0, 5, "  - " + w, new_x="LMARGIN", new_y="NEXT")
+        if not bledy and not warningi:
+            pdf.set_font("jpk", size=9)
+            pdf.multi_cell(0, 5, "Lint: brak błędów schematu i warningów.", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(2)
         pdf.set_font("jpk", size=9)
-        pdf.multi_cell(0, 5, "Raport wygenerowany lokalnie; pliki JPK nie są wysyłane.")
+        pdf.multi_cell(0, 5, "Raport wygenerowany lokalnie; pliki JPK nie są wysyłane.", new_x="LMARGIN", new_y="NEXT")
         pdf.output(wyjscie_pdf)
         print("Zapisano PDF: %s" % wyjscie_pdf)
+    # exit 1 = błąd walidacji XSD (dane jednak wyeksportowane); warningi lint = exit 0
+    if bledy:
+        return 1
     return 0
 
 
@@ -848,6 +961,16 @@ def przygotuj(sciezka, wersja_przelacznik):
         die("plik jest %s, a --wersja %s — sprzeczność. Uruchom z --wersja auto."
             % (info["nazwa"], wersja_przelacznik), 2)
     schema, _, dokumenty = wczytaj_schemat(ns, info["wariant"])
+    root = drzewo.getroot()
+    if czy_signature(root):
+        # Plik podpisany XAdES: ds:Signature jako dziecko roota NIE jest w schemacie
+        # JPK — bez wycięcia walidacja zawsze by FAILowała. Wycinamy z drzewa
+        # W PAMIĘCI (plik na dysku zostaje nietknięty); sourceline elementów
+        # zostaje, więc kontekst błędów (pozycja ewidencji) dalej działa.
+        for dziecko in list(root):
+            if isinstance(dziecko.tag, str) and dziecko.tag.endswith("}Signature"):
+                root.remove(dziecko)
+        print("plik podpisany (XAdES ds:Signature) — waliduję treść bez podpisu")
     return drzewo, info, ns, schema, dokumenty
 
 
@@ -901,8 +1024,6 @@ def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="jpk_viewer.py",
         description="%s v%s — JPK_V7M(3)/JPK_V7K(3)/JPK_V7M(2)/JPK_V7K(2): sprawdz, podglad, lint, diff, eksport (lokalnie, bez sieci)" % (NAZWA, WERSJA))
-    ap.add_argument("--pozwol-siec", action="store_true",
-                    help="TYLKO DIagnostyka: domyślnie OFF — narzędzie pracuje offline")
     sub = ap.add_subparsers(dest="komenda", required=True)
 
     p1 = sub.add_parser("sprawdz", help="autodetekcja wersji + walidacja XSD offline")
@@ -927,18 +1048,13 @@ def main(argv=None):
     p5.add_argument("--pdf", default=None, help="opcjonalny raport .pdf")
 
     args = ap.parse_args(argv)
-    if args.pozwol_siec:
-        print("UWAGA: --pozwol-siec włączone — liczę próby sieciowe, ale praca powinna zostać offline.")
-    else:
-        # domyślnie: twarde blokowanie sieci na poziomie parsera
-        global POZWOL_SIEC
-        POZWOL_SIEC = False
 
     if args.komenda == "sprawdz":
         kod = cmd_sprawdz(args.plik, args.wersja)
     elif args.komenda == "podglad":
         drzewo, info, ns = wykryj_wersje(args.plik)
-        kod = pokaz_podglad(drzewo, info, ns)
+        sprawdz_zgode_wersji(drzewo, info, args.wersja)
+        kod = pokaz_podglad(drzewo, info, ns, sha256(sciezka_pliku(args.plik)))
         assertuj_offline("podglad")
     elif args.komenda == "lint":
         kod = cmd_lint(args.plik, args.wersja)

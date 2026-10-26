@@ -1,20 +1,24 @@
 {
-  "narzedzie": "jpk-viewer-lint v0.1.0",
+  "narzedzie": "jpk-viewer-lint v0.1.1",
+  "wejscie": {
+    "plik": "/Users/marcinoldak/projects/jpk-viewer-lint/testy/fixture-jpk_v7m2-syntetyk.xml",
+    "sha256": "e4b9e00e4f1e9eab1118d1f995ee75180de0a5e7d097fd0c2367d2e2fae5996e"
+  },
   "porownanie": "JPK_V7M(2) -> JPK_V7M(3)",
   "sekcje": {
     "Naglowek": {
       "dodane_w3": [],
-      "usuniete_z3": []
+      "usuniete_w3": []
     },
     "Podmiot1": {
       "dodane_w3": [],
-      "usuniete_z3": []
+      "usuniete_w3": []
     },
     "Deklaracja": {
       "dodane_w3": [
         "P_360"
       ],
-      "usuniete_z3": [
+      "usuniete_w3": [
         "P_57"
       ]
     },
@@ -26,7 +30,7 @@
         "NrKSeF",
         "OFF"
       ],
-      "usuniete_z3": []
+      "usuniete_w3": []
     },
     "SprzedazWiersz": {
       "dodane_w3": [
@@ -36,11 +40,11 @@
         "NrKSeF",
         "OFF"
       ],
-      "usuniete_z3": []
+      "usuniete_w3": []
     },
     "SprzedazCtrl": {
       "dodane_w3": [],
-      "usuniete_z3": []
+      "usuniete_w3": []
     },
     "ZakupWiersz": {
       "dodane_w3": [
@@ -49,11 +53,11 @@
         "NrKSeF",
         "OFF"
       ],
-      "usuniete_z3": []
+      "usuniete_w3": []
     },
     "ZakupCtrl": {
       "dodane_w3": [],
-      "usuniete_z3": []
+      "usuniete_w3": []
     }
   },
   "znaczniki_v3": {
@@ -62,8 +66,8 @@
     "DI": []
   },
   "co_sprawdzono": [
-    "NARZĘDZIE: jpk-viewer-lint v0.1.0",
+    "NARZĘDZIE: jpk-viewer-lint v0.1.1",
     "CO SPRAWDZONO: struktura wg oficjalnego schematu MF JPK_V7M(3) (lokalnie, offline); suma ewidencji vs pola P_* będące czystymi sumami; liczniki wierszy; sumy kontrolne",
-    "CZEGO NIE SPRAWDZONO: poprawności podatkowej (P_10..P_36, P_39..P_62 zależą od decyzji), zasadności korekty, obowiązków KSeF, podpisu XAdES, poprawności NIP wobec urzędu"
+    "CZEGO NIE SPRAWDZONO: poprawności podatkowej (P_10..P_36, P_39..P_62 zależą od decyzji), zasadności korekty, obowiązków KSeF, podpisu XAdES (podpis wycinamy z pamięci przed walidacją i NIE weryfikujemy go), poprawności NIP wobec urzędu"
   ]
 }
