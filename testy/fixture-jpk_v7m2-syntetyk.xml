@@ -1,0 +1,107 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<JPK xmlns="http://crd.gov.pl/wzor/2021/12/27/11148/">
+	<Naglowek>
+		<KodFormularza kodSystemowy="JPK_V7M (2)" wersjaSchemy="1-0E">JPK_VAT</KodFormularza>
+		<WariantFormularza>2</WariantFormularza>
+		<DataWytworzeniaJPK>2022-01-15T12:00:00Z</DataWytworzeniaJPK>
+		<NazwaSystemu>jpk-viewer-lint-syntetyk</NazwaSystemu>
+		<CelZlozenia poz="P_7">1</CelZlozenia>
+		<KodUrzedu>1215</KodUrzedu>
+		<Rok>2022</Rok>
+		<Miesiac>01</Miesiac>
+	</Naglowek>
+	<Podmiot1 rola="Podatnik">
+		<OsobaNiefizyczna>
+			<NIP>5213017329</NIP>
+			<PelnaNazwa>FIRMA SYNTETYCZNA SP. Z O.O.</PelnaNazwa>
+			<Email>syntetyk@example.com</Email>
+		</OsobaNiefizyczna>
+	</Podmiot1>
+	<Deklaracja>
+		<Naglowek>
+			<KodFormularzaDekl kodSystemowy="VAT-7 (22)" kodPodatku="VAT" rodzajZobowiazania="Z" wersjaSchemy="1-0E">VAT-7</KodFormularzaDekl>
+			<WariantFormularzaDekl>22</WariantFormularzaDekl>
+		</Naglowek>
+		<PozycjeSzczegolowe>
+			<P_10>0</P_10>
+			<P_11>0</P_11>
+			<P_12>0</P_12>
+			<P_13>0</P_13>
+			<P_14>0</P_14>
+			<P_15>0</P_15>
+			<P_16>0</P_16>
+			<P_17>0</P_17>
+			<P_18>0</P_18>
+			<P_19>1000</P_19>
+			<P_20>230</P_20>
+			<P_21>0</P_21>
+			<P_22>0</P_22>
+			<P_23>0</P_23>
+			<P_24>0</P_24>
+			<P_25>0</P_25>
+			<P_26>0</P_26>
+			<P_27>0</P_27>
+			<P_28>0</P_28>
+			<P_29>0</P_29>
+			<P_30>0</P_30>
+			<P_31>0</P_31>
+			<P_32>0</P_32>
+			<P_33>0</P_33>
+			<P_34>0</P_34>
+			<P_35>0</P_35>
+			<P_36>0</P_36>
+			<P_37>1000</P_37>
+			<P_38>230</P_38>
+			<P_39>0</P_39>
+			<P_40>0</P_40>
+			<P_41>0</P_41>
+			<P_42>500</P_42>
+			<P_43>115</P_43>
+			<P_44>0</P_44>
+			<P_45>0</P_45>
+			<P_46>0</P_46>
+			<P_47>0</P_47>
+			<P_48>115</P_48>
+			<P_49>0</P_49>
+			<P_50>0</P_50>
+			<P_51>115</P_51>
+			<P_53>0</P_53>
+			<P_62>0</P_62>
+		</PozycjeSzczegolowe>
+		<Pouczenia>1</Pouczenia>
+	</Deklaracja>
+	<Ewidencja>
+		<SprzedazWiersz>
+			<LpSprzedazy>1</LpSprzedazy>
+			<KodKrajuNadaniaTIN>PL</KodKrajuNadaniaTIN>
+			<NrKontrahenta>1111111111</NrKontrahenta>
+			<NazwaKontrahenta>KLIENT SYNTETYCZNY</NazwaKontrahenta>
+			<DowodSprzedazy>FV/2022/01/001</DowodSprzedazy>
+			<DataWystawienia>2022-01-10</DataWystawienia>
+			<DataSprzedazy>2022-01-10</DataSprzedazy>
+			<TypDokumentu>FP</TypDokumentu>
+			<K_19>1000.00</K_19>
+			<K_20>230.00</K_20>
+		</SprzedazWiersz>
+		<SprzedazCtrl>
+			<LiczbaWierszySprzedazy>1</LiczbaWierszySprzedazy>
+			<PodatekNalezny>230.00</PodatekNalezny>
+		</SprzedazCtrl>
+		<ZakupWiersz>
+			<LpZakupu>1</LpZakupu>
+			<KodKrajuNadaniaTIN>PL</KodKrajuNadaniaTIN>
+			<NrDostawcy>2222222222</NrDostawcy>
+			<NazwaDostawcy>DOSTAWCA SYNTETYCZNY</NazwaDostawcy>
+			<DowodZakupu>FV/2022/01/101</DowodZakupu>
+			<DataZakupu>2022-01-12</DataZakupu>
+			<DataWplywu>2022-01-13</DataWplywu>
+			<DokumentZakupu>WEW</DokumentZakupu>
+			<K_42>500.00</K_42>
+			<K_43>115.00</K_43>
+		</ZakupWiersz>
+		<ZakupCtrl>
+			<LiczbaWierszyZakupow>1</LiczbaWierszyZakupow>
+			<PodatekNaliczony>115.00</PodatekNaliczony>
+		</ZakupCtrl>
+	</Ewidencja>
+</JPK>

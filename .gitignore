@@ -1,0 +1,13 @@
+.DS_Store
+__pycache__/
+*.pyc
+.env
+# dane użytkownika NIE lądują w repo (wyjątki: wzory + przykłady):
+*.csv
+*.xml
+*.xlsx
+*.pdf
+# schematy i przykłady MF zostają w repo (dane fikcyjne):
+!schemat/**
+!testy/fixture-*
+testy/realne/

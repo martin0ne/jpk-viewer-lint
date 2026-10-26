@@ -1,0 +1,69 @@
+{
+  "narzedzie": "jpk-viewer-lint v0.1.0",
+  "porownanie": "JPK_V7M(2) -> JPK_V7M(3)",
+  "sekcje": {
+    "Naglowek": {
+      "dodane_w3": [],
+      "usuniete_z3": []
+    },
+    "Podmiot1": {
+      "dodane_w3": [],
+      "usuniete_z3": []
+    },
+    "Deklaracja": {
+      "dodane_w3": [
+        "P_360"
+      ],
+      "usuniete_z3": [
+        "P_57"
+      ]
+    },
+    "Ewidencja": {
+      "dodane_w3": [
+        "BFK",
+        "DI",
+        "K_360",
+        "NrKSeF",
+        "OFF"
+      ],
+      "usuniete_z3": []
+    },
+    "SprzedazWiersz": {
+      "dodane_w3": [
+        "BFK",
+        "DI",
+        "K_360",
+        "NrKSeF",
+        "OFF"
+      ],
+      "usuniete_z3": []
+    },
+    "SprzedazCtrl": {
+      "dodane_w3": [],
+      "usuniete_z3": []
+    },
+    "ZakupWiersz": {
+      "dodane_w3": [
+        "BFK",
+        "DI",
+        "NrKSeF",
+        "OFF"
+      ],
+      "usuniete_z3": []
+    },
+    "ZakupCtrl": {
+      "dodane_w3": [],
+      "usuniete_z3": []
+    }
+  },
+  "znaczniki_v3": {
+    "OFF": [],
+    "BFK": [],
+    "DI": []
+  },
+  "co_sprawdzono": [
+    "NARZĘDZIE: jpk-viewer-lint v0.1.0",
+    "CO SPRAWDZONO: struktura wg oficjalnego schematu MF JPK_V7M(3) (lokalnie, offline); suma ewidencji vs pola P_* będące czystymi sumami; liczniki wierszy; sumy kontrolne",
+    "CZEGO NIE SPRAWDZONO: poprawności podatkowej (P_10..P_36, P_39..P_62 zależą od decyzji), zasadności korekty, obowiązków KSeF, podpisu XAdES, poprawności NIP wobec urzędu"
+  ]
+}
