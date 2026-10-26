@@ -99,12 +99,60 @@ def main():
         ws = wb["Sprzedaż"]
         hdr = [c.value for c in ws[1]]
         i_k20 = hdr.index("K_20")
-        v_k20 = ws.cell(row=2, column=i_k20 + 1).value
+        v_k20 = ws.cell(row=3, column=i_k20 + 1).value  # wiersz 2 = etykiety z XSD
         test("eksport: kwoty w XLSX jako LICZBY (K_20 = float, nie tekst)",
              isinstance(v_k20, (int, float)), "typ: %s" % type(v_k20).__name__)
+        lab_k20 = ws.cell(row=2, column=i_k20 + 1).value
+        lab_k10 = ws.cell(row=2, column=hdr.index("K_10") + 1).value
+        test("eksport: wiersz 2 = etykiety z broszury (XSD), nie kody K_*",
+             isinstance(lab_k20, str) and lab_k20 not in ("", "K_20")
+             and isinstance(lab_k10, str) and lab_k10 not in ("", "K_10"),
+             "K_20: %s" % (lab_k20 or "")[:50])
     except Exception as e:
         test("eksport: XLSX", False, str(e))
     test("eksport: PDF zapisany", os.path.exists(os.path.join(KATALOG, pdf)), "")
+
+    # --- eksport: PDF zawiera DANE ewidencji (nie tylko lint) ---
+    # Weryfikacja tekstu PDF wymaga pypdf (zależność testowa, nie runtime) —
+    # bez pypdf testy są pomijane, reszta suite'u działa.
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(os.path.join(KATALOG, pdf))
+        tekst_pdf = "\n".join((p.extract_text() or "") for p in reader.pages)
+        test("eksport: PDF ma sekcję ewidencji sprzedaży (tabela danych)",
+             "Ewidencja sprzedaży" in tekst_pdf and "Ewidencja zakupu" in tekst_pdf,
+             "%d stron" % len(reader.pages))
+        test("eksport: PDF ma wiersze ewidencji (Lp/kontrahent/dowód)",
+             "Kontrahent" in tekst_pdf and "Dowód" in tekst_pdf, "")
+    except ImportError:
+        print("SKIP eksport: PDF dane — brak pypdf (zależność testowa: pip install pypdf)")
+
+    # --- eksport: PDF wielostronicowy — nagłówek tabeli powtarzany na stronach ---
+    import re as _re
+    src_f3 = open(os.path.join(KATALOG, f3), encoding="utf-8").read()
+    m_wiersz = _re.search(r"<SprzedazWiersz>.*?</SprzedazWiersz>", src_f3, _re.S)
+    if m_wiersz:
+        tmp_pdf = "testy/tmp-test-pdf-dane.xml"
+        blok = m_wiersz.group(0)
+        open(os.path.join(KATALOG, tmp_pdf), "w", encoding="utf-8").write(
+            src_f3.replace(blok, blok * 120, 1))
+        xlsx_pdf = "testy/tmp-test-pdf-dane.pdf"
+        kod, out, err = uruchom(["eksport", tmp_pdf, "--wyjscie", "testy/tmp-test-pdf-dane.xlsx", "--pdf", xlsx_pdf])
+        test("eksport 120 wierszy: exit 0 (warningi dopuszczalne)", kod == 0, "exit=%d" % kod)
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(os.path.join(KATALOG, xlsx_pdf))
+            str2 = reader.pages[1].extract_text() or ""
+            test("eksport 120 wierszy: PDF wielostronicowy, nagłówek tabeli powtórzony na str. 2",
+                 len(reader.pages) > 1
+                 and all(z in str2 for z in ("Lp", "Kontrahent", "Dowód", "VAT 23% (K_20)")),
+                 "%d stron" % len(reader.pages))
+        except ImportError:
+            print("SKIP eksport 120 wierszy: PDF — brak pypdf")
+        for t2 in ("testy/tmp-test-pdf-dane.xml", "testy/tmp-test-pdf-dane.xlsx", xlsx_pdf):
+            p2 = os.path.join(KATALOG, t2)
+            if os.path.exists(p2):
+                os.remove(p2)
 
     # --- pomiar zero sieci (resolver liczy próby http) ---
     kod, out, err = uruchom(["sprawdz", f3])
@@ -122,6 +170,8 @@ def main():
     kod, out, err = uruchom(["lint", tmp_p20])
     test("lint: P_20=999 vs ewidencja 230 -> WARNING z dwiema liczbami",
          kod == 0 and "P_20 deklaracji = 999.00" in out and "suma ewidencji = 230.00" in out, "exit=%d" % kod)
+    test("lint: warning różnicy ma dopisek po ludzku (FP/korekty)",
+         "różnica może wynikać z faktur FP lub korekt" in out, "")
 
     tmp_fp = "testy/tmp-test-fp.xml"
     open(os.path.join(KATALOG, tmp_fp), "w", encoding="utf-8").write(
@@ -132,6 +182,27 @@ def main():
     kod, out, err = uruchom(["lint", tmp_fp])
     test("lint: wiersz FP -> bez fałszywego warninga PodatekNalezny (SprzedazCtrl)",
          kod == 0 and "PodatekNalezny (SprzedazCtrl)" not in out, "exit=%d" % kod)
+
+    # --- FP: ta sama podstawa po obu stronach, na KAŻDEJ wersji schematu ---
+    # syntetyki (2) mają wiersz FP; realny MF fixture (3) też ma FP wiersz.
+    for plik_fp, etykieta_w in [(f2k, "(2) K"), (f2, "(2) M"), (f3, "(3) M")]:
+        kod, out, err = uruchom(["lint", plik_fp])
+        test("lint %s plik z FP: zero fałszywych warningów PodatekNalezny/Naliczony" % etykieta_w,
+             kod == 0 and "PodatekNalezny (SprzedazCtrl)" not in out
+             and "PodatekNaliczony (ZakupCtrl)" not in out, "exit=%d" % kod)
+        test("lint %s plik z wierszami: brak dygresji „plik zerowy (sprzedaż 0)" % etykieta_w,
+             "plik zerowy (sprzedaż 0)" not in out, "")
+
+    # --- dygresja: pusta ewidencja = ZERO WIERSZY, nie suma 0 ---
+    tmp_pusty = "testy/tmp-test-pusta-ewidencja.xml"
+    open(os.path.join(KATALOG, tmp_pusty), "w", encoding="utf-8").write(
+        _re.sub(r"\r?\n[ \t]*<SprzedazWiersz>.*?</SprzedazWiersz>", "", src, count=1, flags=_re.S))
+    tmp.append(tmp_pusty)
+    kod, out, err = uruchom(["lint", tmp_pusty])
+    test("lint: pusta ewidencja sprzedaży (0 wierszy) -> dygresja po ludzku",
+         kod == 0 and "ewidencja sprzedaży jest pusta (0 wierszy)" in out, "exit=%d" % kod)
+    test("lint: pusta ewidencja -> brak starej dygresji „plik zerowy (sprzedaż 0)”",
+         "plik zerowy (sprzedaż 0)" not in out, "")
 
     tmp_ent = "testy/tmp-test-ent.xml"
     open(os.path.join(KATALOG, tmp_ent), "w", encoding="utf-8").write(

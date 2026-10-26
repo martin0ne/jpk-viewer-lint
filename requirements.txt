@@ -1,0 +1,5 @@
+# jpk-viewer-lint — zależności runtime (Python 3.10+).
+# Instalacja: python3 -m pip install -r requirements.txt
+lxml>=5.0
+openpyxl>=3.1
+fpdf2>=2.7

@@ -1,8 +1,8 @@
 {
-  "narzedzie": "jpk-viewer-lint v0.1.1",
+  "narzedzie": "jpk-viewer-lint v0.1.2",
   "wejscie": {
     "plik": "/Users/marcinoldak/projects/jpk-viewer-lint/testy/fixture-jpk_v7m2-syntetyk.xml",
-    "sha256": "e4b9e00e4f1e9eab1118d1f995ee75180de0a5e7d097fd0c2367d2e2fae5996e"
+    "sha256": "4fd0b1700c4896b1d67477090c5047c153b6d6a511c21c9d61cdd6a867efc254"
   },
   "porownanie": "JPK_V7M(2) -> JPK_V7M(3)",
   "sekcje": {
@@ -66,7 +66,7 @@
     "DI": []
   },
   "co_sprawdzono": [
-    "NARZĘDZIE: jpk-viewer-lint v0.1.1",
+    "NARZĘDZIE: jpk-viewer-lint v0.1.2",
     "CO SPRAWDZONO: struktura wg oficjalnego schematu MF JPK_V7M(3) (lokalnie, offline); suma ewidencji vs pola P_* będące czystymi sumami; liczniki wierszy; sumy kontrolne",
     "CZEGO NIE SPRAWDZONO: poprawności podatkowej (P_10..P_36, P_39..P_62 zależą od decyzji), zasadności korekty, obowiązków KSeF, podpisu XAdES (podpis wycinamy z pamięci przed walidacją i NIE weryfikujemy go), poprawności NIP wobec urzędu"
   ]

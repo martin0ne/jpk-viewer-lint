@@ -86,7 +86,9 @@
 		</SprzedazWiersz>
 		<SprzedazCtrl>
 			<LiczbaWierszySprzedazy>1</LiczbaWierszySprzedazy>
-			<PodatekNalezny>230.00</PodatekNalezny>
+			<!-- broszura (xsd:documentation): suma VAT Z WYŁĄCZENIEM faktur FP;
+			     jedyny wiersz sprzedaży jest FP, więc PodatekNalezny = 0.00 -->
+			<PodatekNalezny>0.00</PodatekNalezny>
 		</SprzedazCtrl>
 		<ZakupWiersz>
 			<LpZakupu>1</LpZakupu>

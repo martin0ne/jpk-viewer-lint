@@ -1,4 +1,4 @@
-# jpk-viewer-lint — v0.1.1
+# jpk-viewer-lint — v0.1.2
 
 Narzędzie CLI do **lokalnego** przeglądania i weryfikacji plików JPK_V7 (vat.web):
 `sprawdz` (walidacja XSD offline), `podglad` (ewidencje w terminalu),
@@ -49,21 +49,29 @@ Wersje (1) (2020-01-06) są poza zakresem — jawny komunikat.
   nie error), (c) dygresje jawne. Mapowanie kolumn wg dokumentacji w schemacie:
   `P_37` = K_10, K_11, K_13, K_15, **K_17**, K_19, K_21, K_22, K_23, K_25, K_27,
   K_29, K_31; `P_38` = suma należnych − K_35/K_36/K_360; `P_48` = P_39 + suma
-  naliczonych; pojedyncze P_n ↔ K_n. Wyłączenie faktur **FP** stosujemy TYLKO
-  przy porównaniu z sumą kontrolną `SprzedazCtrl/PodatekNalezny` (schemat:
-  „z wyłączeniem faktur oznaczonych FP") — pola deklaracji liczone z pełnej
-  ewidencji, więc plik z FP nie dostaje fałszywego warninga. Dygresje drukują
-  się dla (3) i (2) i mówią wprost, czego lint nie ocenia (m.in. podstawy
-  P_15/P_17/P_19 osobno, P_39 jako wejście kontroli P_48).
+  naliczonych; pojedyncze P_n ↔ K_n. **Wyłączenie faktur FP czytamy z XSD**
+  (`xsd:documentation` danego pola): kontrola porównuje ZAWSZE tę samą podstawę
+  po obu stronach — tam, gdzie schemat każe wykluczać FP (np.
+  `SprzedazCtrl/PodatekNalezny`), suma ewidencji też bez FP; gdzie nie każe
+  (pola P_*), pełna ewidencja po obu. Każdy warning różnicy kwot ma dopisek:
+  „różnica może wynikać z faktur FP lub korekt — sprawdź typ dokumentu
+  (TypDokumentu)". Dygresje drukują się dla (3) i (2) i mówią wprost, czego
+  lint nie ocenia (m.in. podstawy P_15/P_17/P_19 osobno, P_39 jako wejście
+  kontroli P_48). Pusta ewidencja = **zero wierszy** (dygresja „ewidencja
+  sprzedaży jest pusta (0 wierszy)") — plik z wierszami o sumie 0 dygresją
+  „plik zerowy" nie straszy.
 - **`diff`** — porównanie struktury (2)↔(3): lista dodanych/usuniętych pól
   `K_…`, nowych znaczników (`NrKSeF`, `OFF`, `BFK`, `DI` — potwierdzone w
   schematach), eksport JSON (`--wyjscie`; zawiera wersję narzędzia, SHA256
   wejścia i etykietę „co sprawdzono"). Wersja + SHA256 też na stdout.
-- **`eksport`** — ewidencje → XLSX (openpyxl; kwoty i Lp jako LICZBY, nie tekst)
-  + PDF (fpdf2, font z polskimi znakami: JPK_FONT, DejaVu/Arial, ścieżki
-  Windows). PDF to raport eksportu **z wynikami lint** (błędy XSD + warningi
-  kontrole krzyżowe), nie tylko dane. Błędy XSD → exit 1 (dane jednak
-  wyeksportowane); warningi lint → exit 0.
+- **`eksport`** — ewidencje → XLSX (openpyxl; kwoty i Lp jako LICZBY, nie tekst;
+  wiersz 1 = kody pól K_*, wiersz 2 = etykiety z broszury czytane automatycznie
+  z `xsd:documentation` schematu pliku) + PDF (fpdf2, font z polskimi znakami:
+  JPK_FONT, DejaVu/Arial, ścieżki Windows). PDF zawiera DANE ewidencji — tabele
+  sprzedaży i zakupu (Lp, kontrahent/dostawca, dowód, data, netto, VAT) z
+  nagłówkiem powtarzanym na każdej stronie — plus wyniki lint (błędy XSD +
+  warningi kontroli krzyżowych). Błędy XSD → exit 1 (dane jednak wyeksportowane);
+  warningi lint → exit 0.
 - **Prawdomówność per raport**: wersja narzędzia + hash wejścia (sha256)
   + etykieta „co sprawdzono / czego NIE" — w sprawdz/lint/eksport na stdout,
   w diff też (stdout + JSON), w podgląd wersja + hash.
@@ -77,6 +85,7 @@ Wersje (1) (2020-01-06) są poza zakresem — jawny komunikat.
 
 ```
 jpk_viewer.py          # CLI (sprawdz / podglad / lint / diff / eksport)
+requirements.txt       # lxml, openpyxl, fpdf2 (python3 -m pip install -r requirements.txt)
 schemat/v3/            # JPK_V7M(3) + JPK_V7K(3) + importy (KodyKrajow, KodyUrzedowSkarbowych, StrukturyDanych)
 schemat/v2/            # JPK_V7M(2) + JPK_V7K(2) + importy
 testy/                 # fixtures: MF (3) + syntetyk (2) + zepsuty plik + uruchom_testy.py
@@ -145,10 +154,20 @@ Uwaga: nazwy importów różnią się między wersjami — dlatego per katalog:
 ## Instalacja
 
 ```bash
-python3 -m venv .venv 2>/dev/null || true
-# wymagania: lxml, openpyxl, fpdf2 (testy: python3 testy/uruchom_testy.py)
-pip install lxml openpyxl fpdf2
+python3 -m pip install -r requirements.txt          # lxml, openpyxl, fpdf2
 ```
+
+Albo w jednym kawałku w venv (jeśli wolisz nie dotykać systemowego Pythona):
+
+```bash
+python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt
+# potem: .venv/bin/python jpk_viewer.py sprawdz plik.xml
+```
+
+Zawsze przez `python3 -m pip` (albo `.venv/bin/python -m pip`) — goły `pip`
+może należeć do innego Pythona niż ten, który odpala narzędzie. Font z polskimi
+znakami: macOS/Windows mają Arial/Segoe (bierze go automatycznie); ewentualnie
+`JPK_FONT=/ścieżka/do/DejaVuSans.ttf`. Testy: `python3 testy/uruchom_testy.py`.
 
 ## Uruchamianie
 
@@ -158,7 +177,8 @@ python3 jpk_viewer.py podglad plik.xml            # tabele ewidencji w terminalu
 python3 jpk_viewer.py lint plik.xml               # walidacja + kontrole krzyżowe
 python3 jpk_viewer.py diff plik-v2.xml            # porównanie struktury (2)↔(3)
 python3 jpk_viewer.py eksport plik.xml --wyjscie R.xlsx --pdf R.pdf
-python3 testy/uruchom_testy.py                    # pełny test suite (29 PASS)
+python3 testy/uruchom_testy.py                    # pełny test suite (43 PASS; pełne
+                                                  # weryfikacje tekstu PDF: pip install pypdf)
 ```
 
 ## Licencja

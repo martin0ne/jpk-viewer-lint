@@ -27,7 +27,7 @@ except ImportError:
     sys.exit(2)
 
 NAZWA = "jpk-viewer-lint"
-WERSJA = "0.1.1"
+WERSJA = "0.1.2"
 KATALOG = os.path.dirname(os.path.abspath(__file__))
 
 # ---------------------------------------------------------------------------
@@ -151,6 +151,20 @@ def pole_doc(dokumenty, pole, domyslne=""):
     return dokumenty.get(pole, domyslne)
 
 
+# Dopisek po ludzku do każdego warninga z różnicą kwot — inaczej księgowa
+# widzi „różnica = 230.00" i myśli, że plik jest zepsuty.
+UWAGA_ROZNICA = "różnica może wynikać z faktur FP lub korekt — sprawdź typ dokumentu (TypDokumentu)"
+
+
+def wylacza_fp(pole, dokumenty):
+    """Czy dla TEGO pola schemat każe wykluczać faktury FP? Czytamy z XSD
+    (xsd:documentation), nie zgadujemy: dokumentacja PodatekNalezny
+    (SprzedazCtrl) wymienia FP → suma ewidencji też bez FP; pola P_* nie
+    wymieniają FP → pełna ewidencja po obu stronach. Reguła: kontrola
+    krzyżowa porównuje ZAWSZE tę samą podstawę po lewej i po prawej."""
+    return "FP" in " ".join((dokumenty.get(pole) or "").split())
+
+
 # Krótkie etykiety (po ludzku) dla najczęstszych pól; reszta bierze opis z XSD.
 ETYKIETY = {
     "K_42": "wartość netto z nabycia pozostałych towarów i usług",
@@ -178,6 +192,17 @@ def etykieta(pole, dokumenty):
         d = d.split(", podlegająca")[0].split("przysługująca")[0].split(" wynikająca z")[0]
         return d[:60].lower()
     return pole
+
+
+def etykieta_kolumny(kol, dokumenty):
+    """Pełna etykieta kolumny (wiersz nagłówka XLSX / nagłówek tabeli PDF):
+    xsd:documentation elementu ze schematu PLIKU (wczytaj_schemat → dokumenty),
+    awaryjnie krótka etykieta, na końcu sam kod pola. Nie zgadujemy — etykiety
+    przychodzą automatycznie z XSD, więc (2) i (3) mają swoje własne opisy."""
+    d = " ".join((dokumenty.get(kol) or "").split())
+    if d:
+        return d
+    return ETYKIETY.get(kol, kol)
 
 
 # ---------------------------------------------------------------------------
@@ -554,18 +579,21 @@ def kontrole_krzyzowe(drzewo, info, ns):
 
     kontrole = [(p, d, m) for p, d, m in KONTROLE_LISTA]
     for pole, dodatnie, minus in kontrole:
+        # TA SAMA podstawa po obu stronach: jeśli dokumentacja pola w schemacie
+        # każe wykluczać FP — wykluczamy w sumie ewidencji; jeśli nie — pełna.
+        pomin_fp_pola = wylacza_fp(pole, dokumenty)
         if pole == "P_48":
             # P_48 = P_39 + suma naliczonego; P_39 to przeniesienie z poprzedniej dekl.
             p39 = suma_pola(dekl, "P_39")
             if p39 is None:
                 p39 = Decimal("0")
-            spodziewane = p39 + suma_kolumn(ewidencja, dodatnie)
+            spodziewane = p39 + suma_kolumn(ewidencja, dodatnie, pomin_fp=pomin_fp_pola)
             opis = "P_48 (łączny podatek naliczony do odliczenia) = P_39 + %s" % " + ".join(dodatnie)
         elif pole == "P_38":
-            spodziewane = suma_kolumn(ewidencja, dodatnie) - suma_kolumn(ewidencja, minus)
+            spodziewane = suma_kolumn(ewidencja, dodatnie, pomin_fp=pomin_fp_pola) - suma_kolumn(ewidencja, minus, pomin_fp=pomin_fp_pola)
             opis = "P_38 (podatek należny) = %s − %s" % (" + ".join(dodatnie[:4]) + "…", " + ".join(minus) if minus else "0")
         else:
-            spodziewane = suma_kolumn(ewidencja, dodatnie) - suma_kolumn(ewidencja, minus)
+            spodziewane = suma_kolumn(ewidencja, dodatnie, pomin_fp=pomin_fp_pola) - suma_kolumn(ewidencja, minus, pomin_fp=pomin_fp_pola)
             opis = "%s = %s" % (pole, (" + ".join(dodatnie) + (" − " + " + ".join(minus) if minus else "")))
         dekl_wart = suma_pola(dekl, pole)
         if dekl_wart is None:
@@ -575,8 +603,8 @@ def kontrole_krzyzowe(drzewo, info, ns):
         if spodziewane == Decimal("0") and dekl_wart == Decimal("0"):
             continue
         roznica = dekl_wart - spodziewane
-        warningi.append("%s deklaracji = %s, suma ewidencji = %s, różnica = %s" % (
-            pole, kwota(dekl_wart), kwota(spodziewane), kwota(roznica)))
+        warningi.append("%s deklaracji = %s, suma ewidencji = %s, różnica = %s — %s" % (
+            pole, kwota(dekl_wart), kwota(spodziewane), kwota(roznica), UWAGA_ROZNICA))
 
     # --- kontrole sum kontrolnych ewidencji ---
     sprzedaz_ctrl = ewidencja.find("{*}SprzedazCtrl")
@@ -589,13 +617,15 @@ def kontrole_krzyzowe(drzewo, info, ns):
                 n_ctrl, n_real, n_ctrl - n_real))
         pod = suma_pola(sprzedaz_ctrl, "PodatekNalezny")
         if pod is not None:
-            # Schemat: "suma kwot z K_16, … pomniejszona o K_35, K_36, K_360,
-            # z wyłączeniem faktur oznaczonych FP" → pomin_fp=True (inaczej
-            # plik z fakturami FP dostawałby fałszywy warning).
-            spodziewane = suma_kolumn(ewidencja, ["K_16", "K_18", "K_20", "K_24", "K_26", "K_28", "K_30", "K_32", "K_33", "K_34"], pomin_fp=True) - suma_kolumn(ewidencja, ["K_35", "K_36", "K_360"], pomin_fp=True)
+            # Podstawa Z SCHEMATU (xsd:documentation): PodatekNalezny = suma K_16…
+            # „z wyłączeniem faktur oznaczonych FP" → pomin_fp=True (wylacza_fp
+            # czyta to z XSD; jeśli kiedyś schemat zmieni definicję, podstawa
+            # zmieni się z nią, nie z domysłu w kodzie).
+            pomin = wylacza_fp("PodatekNalezny", dokumenty)
+            spodziewane = suma_kolumn(ewidencja, ["K_16", "K_18", "K_20", "K_24", "K_26", "K_28", "K_30", "K_32", "K_33", "K_34"], pomin_fp=pomin) - suma_kolumn(ewidencja, ["K_35", "K_36", "K_360"], pomin_fp=pomin)
             if pod != spodziewane:
-                warningi.append("PodatekNalezny (SprzedazCtrl) = %s, suma ewidencji (bez FP) = %s, różnica = %s" % (
-                    pod, kwota(spodziewane), kwota(pod - spodziewane)))
+                warningi.append("PodatekNalezny (SprzedazCtrl) = %s, suma ewidencji (%s) = %s, różnica = %s — %s" % (
+                    pod, "bez FP" if pomin else "pełna", kwota(spodziewane), kwota(pod - spodziewane), UWAGA_ROZNICA))
     if zakup_ctrl is not None:
         n_ctrl = suma_pola(zakup_ctrl, "LiczbaWierszyZakupow")
         n_real = len([d for d in ewidencja if isinstance(d.tag, str) and d.tag.endswith("}ZakupWiersz")])
@@ -604,10 +634,11 @@ def kontrole_krzyzowe(drzewo, info, ns):
                 n_ctrl, n_real, n_ctrl - n_real))
         pod = suma_pola(zakup_ctrl, "PodatekNaliczony")
         if pod is not None:
-            spodziewane = suma_kolumn(ewidencja, ["K_41", "K_43", "K_44", "K_45", "K_46", "K_47"])
+            pomin = wylacza_fp("PodatekNaliczony", dokumenty)
+            spodziewane = suma_kolumn(ewidencja, ["K_41", "K_43", "K_44", "K_45", "K_46", "K_47"], pomin_fp=pomin)
             if pod != spodziewane:
-                warningi.append("PodatekNaliczony (ZakupCtrl) = %s, suma ewidencji = %s, różnica = %s" % (
-                    pod, kwota(spodziewane), kwota(pod - spodziewane)))
+                warningi.append("PodatekNaliczony (ZakupCtrl) = %s, suma ewidencji (%s) = %s, różnica = %s — %s" % (
+                    pod, "bez FP" if pomin else "pełna", kwota(spodziewane), kwota(pod - spodziewane), UWAGA_ROZNICA))
     return warningi, dygresje
 
 
@@ -628,9 +659,11 @@ def dygresje_jawne(drzewo, info, ns):
             bez_ksef = [d for d in sprzedaz if d.find("{*}NrKSeF") is None]
             if bez_ksef:
                 dygresje.append("%d wierszy sprzedaży bez numeru KSeF — może to być poprawne (faktury poza KSeF: BFK/DI/OFF); lint nie weryfikuje obowiązku KSeF" % len(bez_ksef))
-        suma_sprzedazy = suma_kolumn(ewidencja, ["K_19", "K_15", "K_17", "K_10"])
-        if sprzedaz and suma_sprzedazy == 0:
-            dygresje.append("plik zerowy (sprzedaż 0) — to może być zgodne z prawdą (firma bez obrotu); lint tego nie ocenia")
+        # Pusta ewidencja = ZERO WIERSZY (nie suma 0). Plik z wierszami o kwotach
+        # sumujących się do zera nie jest „plik zerowy" — mógłby być poprawny
+        # (np. korekty się znoszą) i dygresja tylko myliła.
+        if not sprzedaz:
+            dygresje.append("ewidencja sprzedaży jest pusta (0 wierszy) — może to być zgodne z prawdą (okres bez obrotu); lint tego nie ocenia")
     kontrolowane = sorted(pole for pole, _, _ in KONTROLE_LISTA)
     nieoceniane = ["P_%d" % n for n in range(10, 49) if "P_%d" % n not in kontrolowane]
     dygresje.append(
@@ -841,6 +874,28 @@ def wartosc_xlsx(pole, tekst):
     return tekst
 
 
+def tabela_pdf(pdf, tytul, wiersze, pola, naglowki, szerokosci):
+    """Tabela ewidencji w PDF (fpdf2 Table API): nagłówek powtarzany na każdej
+    stronie (repeat_headers=True), długi tekst łamie się w komórce. Dane jako
+    tekst — liczby sumowalne są w XLSX, PDF to wydruk do czytania."""
+    pdf.ln(2)
+    pdf.set_font("jpk", size=11)
+    pdf.cell(0, 7, tytul, new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("jpk", size=8)
+    if not wiersze:
+        pdf.cell(0, 6, "(brak wierszy — pusta ewidencja)", new_x="LMARGIN", new_y="NEXT")
+        return
+    with pdf.table(repeat_headings=1, col_widths=szerokosci, text_align="LEFT", line_height=4.5) as t:
+        r = t.row()
+        for h in naglowki:
+            r.cell(h)
+        for el in wiersze:
+            w = widok_wiersz(el, pola, [0] * len(pola))
+            r = t.row()
+            for v in w:
+                r.cell(v)
+
+
 def cmd_eksport(sciezka, wyjscie_xlsx, wyjscie_pdf=None):
     drzewo, info, ns, schema, dokumenty = przygotuj(sciezka, "auto")
     root = drzewo.getroot()
@@ -871,6 +926,8 @@ def cmd_eksport(sciezka, wyjscie_xlsx, wyjscie_pdf=None):
     if sprzedaz:
         kolumny = [d.tag.split("}")[1] for d in sprzedaz[0] if isinstance(d.tag, str) and not d.tag.endswith("}Signature")]
         ws_sprzedaz.append(kolumny)
+        # wiersz 2: etykiety z broszury (xsd:documentation ze schematu pliku)
+        ws_sprzedaz.append([etykieta_kolumny(k, dokumenty) for k in kolumny])
         for el in sprzedaz:
             p = pola_wiersza("s", el)
             ws_sprzedaz.append([wartosc_xlsx(k, p.get(k, "")) for k in kolumny])
@@ -879,6 +936,7 @@ def cmd_eksport(sciezka, wyjscie_xlsx, wyjscie_pdf=None):
     if zakup:
         kolumny = [d.tag.split("}")[1] for d in zakup[0] if isinstance(d.tag, str) and not d.tag.endswith("}Signature")]
         ws_zakup.append(kolumny)
+        ws_zakup.append([etykieta_kolumny(k, dokumenty) for k in kolumny])
         for el in zakup:
             p = pola_wiersza("z", el)
             ws_zakup.append([wartosc_xlsx(k, p.get(k, "")) for k in kolumny])
@@ -919,15 +977,26 @@ def cmd_eksport(sciezka, wyjscie_xlsx, wyjscie_pdf=None):
         pdf = FPDF()
         pdf.add_page()
         pdf.add_font("jpk", "", font)
+        pdf.add_font("jpk", "B", font)  # ten sam plik TTF jako wariant nagłówka tabeli
         pdf.set_font("jpk", size=18)
         pdf.cell(0, 10, "Raport eksportu JPK — %s" % info["nazwa"], new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("jpk", size=10)
         pdf.cell(0, 7, "%s v%s | SHA256: %s" % (NAZWA, WERSJA, hash_pliku), new_x="LMARGIN", new_y="NEXT")
         pdf.multi_cell(0, 6, "\n".join(etykieta_zaufania(info)[1:]))
+        tabela_pdf(pdf, "Ewidencja sprzedaży (%d wierszy) — pełne dane w XLSX" % len(sprzedaz),
+                   sprzedaz,
+                   ["LpSprzedazy", "NrKontrahenta", "NazwaKontrahenta", "DowodSprzedazy",
+                    "DataWystawienia", "K_19", "K_20"],
+                   ["Lp", "Nr kontrahenta", "Kontrahent", "Dowód", "Data wyst.",
+                    "Podstawa 23% (K_19)", "VAT 23% (K_20)"],
+                   (5, 14, 24, 18, 11, 14, 14))
+        tabela_pdf(pdf, "Ewidencja zakupu (%d wierszy) — pełne dane w XLSX" % len(zakup),
+                   zakup,
+                   ["LpZakupu", "NrDostawcy", "NazwaDostawcy", "DowodZakupu", "DataWplywu", "K_42", "K_43"],
+                   ["Lp", "Nr dostawcy", "Dostawca", "Dowód", "Data wpływu",
+                    "Netto (K_42)", "VAT (K_43)"],
+                   (5, 14, 24, 18, 11, 14, 14))
         pdf.ln(2)
-        pdf.set_font("jpk", size=12)
-        pdf.cell(0, 8, "Ewidencja sprzedaży: %d wierszy" % len(sprzedaz), new_x="LMARGIN", new_y="NEXT")
-        pdf.cell(0, 8, "Ewidencja zakupu: %d wierszy" % len(zakup), new_x="LMARGIN", new_y="NEXT")
         if bledy:
             pdf.cell(0, 8, "Błędy schematu (XSD): %d" % len(bledy), new_x="LMARGIN", new_y="NEXT")
             pdf.set_font("jpk", size=9)

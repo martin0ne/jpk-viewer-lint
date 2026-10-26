@@ -3,6 +3,43 @@
 Wszystkie istotne zmiany w tym projekcie są dokumentowane w tym pliku.
 Format wzorowany na Keep a Changelog.
 
+## [0.1.2]
+
+Naprawy z recenzji użytkownika (persona księgowa) + znalezisko testera.
+
+### Dodane
+
+- **`requirements.txt`** (lxml, openpyxl, fpdf2) i jedna spójna ścieżka
+  instalacji w README: `python3 -m pip install -r requirements.txt` albo
+  `python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt`.
+  Zweryfikowane na świeżym venv (Python 3.13, pip 24.3.1).
+- **XLSX: wiersz etykiet** — arkusze „Sprzedaż"/„Zakup" mają wiersz 1 z kodami
+  pól (K_*) i wiersz 2 z pełnymi etykietami z broszury, czytanymi automatycznie
+  z `xsd:documentation` schematu PLIKU (wersja (2) i (3) mają swoje opisy).
+- **PDF: tabela ewidencji** — raport eksportu zawiera teraz DANE (sprzedaż:
+  Lp, kontrahent, dowód, data, podstawa/VAT 23%; zakup: netto/VAT naliczony)
+  z nagłówkiem powtarzanym na każdej stronie (fpdf2 `repeat_headings`),
+  obok dotychczasowych wyników lint.
+- **Testy**: XLSX etykiety, PDF z danymi i wielostronicowość (pypdf,
+  zależność testowa — bez niej testy SKIP), FP na każdej wersji schematu,
+  pusta ewidencja. Suite: 29 → 43 testów.
+
+### Naprawione
+
+- **Lint vs FP — różne podstawy porównania**: wykluczenie faktur FP czytane
+  jest teraz Z XSD (`xsd:documentation` pola) i stosowane po OBU stronach
+  kontroli. Sygnał od testera: poprawny syntetyk K(2) z wierszem FP dostawał
+  warning „PodatekNalezny (SprzedazCtrl) = 230.00, suma ewidencji (bez FP) =
+  0.00". Przyczyna podwójna: fixture-y syntetyk (2) miały `PodatekNalezny`
+  liczony Z FP (broszura każe wykluczać — realny MF fixture (3) miał dobrze);
+  naprawione fixture-y + generator. Warning różnicy ma dopisek po ludzku:
+  „różnica może wynikać z faktur FP lub korekt — sprawdź typ dokumentu
+  (TypDokumentu)".
+- **Myląca dygresja „plik zerowy (sprzedaż 0)"** — pojawiała się dla pliku
+  Z wierszami, którego kwoty sumowały się do zera. Pusta ewidencja = zero
+  WIERSZY: dygresja „ewidencja sprzedaży jest pusta (0 wierszy)" tylko dla
+  plików bez wierszy sprzedaży.
+
 ## [0.1.1]
 
 Fala napraw po audytach (security + logika + dokumentacja).

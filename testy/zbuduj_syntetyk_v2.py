@@ -96,7 +96,9 @@ def zbuduj(ns, typ, wariant_kod, okres, plik_xsd, plik_wyjscie):
     etree.SubElement(wiersz, E("K_20")).text = kwota(vat_s)
     ctrl = etree.SubElement(ewidencja, E("SprzedazCtrl"))
     etree.SubElement(ctrl, E("LiczbaWierszySprzedazy")).text = "1"
-    etree.SubElement(ctrl, E("PodatekNalezny")).text = kwota(vat_s)
+    # broszura (xsd:documentation PodatekNalezny): suma VAT Z WYŁĄCZENIEM
+    # faktur FP — jedyny wiersz sprzedaży jest FP, więc 0.00 (nie vat_s).
+    etree.SubElement(ctrl, E("PodatekNalezny")).text = "0.00"
 
     wiersz_z = etree.SubElement(ewidencja, E("ZakupWiersz"))
     etree.SubElement(wiersz_z, E("LpZakupu")).text = "1"
