@@ -136,7 +136,7 @@ python3 jpk_viewer.py podglad plik.xml            # tabele ewidencji w terminalu
 python3 jpk_viewer.py lint plik.xml               # walidacja + kontrole krzyżowe
 python3 jpk_viewer.py diff plik-v2.xml            # porównanie struktury (2)↔(3)
 python3 jpk_viewer.py eksport plik.xml --wyjscie R.xlsx --pdf R.pdf
-python3 testy/uruchom_testy.py                    # pełny test suite (21 PASS)
+python3 testy/uruchom_testy.py                    # pełny test suite (22 PASS)
 ```
 
 ## Licencja

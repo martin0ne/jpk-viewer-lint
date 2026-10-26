@@ -57,6 +57,11 @@ def main():
         kod, out, err = uruchom(["sprawdz", initupload])
         test("sprawdz poza zakresem (InitUpload -> exit 2)", kod == 2, "exit=%d, %s" % (kod, err.strip()[:60]))
 
+    # --- sprawdz: poza zakresem (prawdziwy JPK_PD) ---
+    kod, out, err = uruchom(["sprawdz", "testy/fixture-jpk_pd.xml"])
+    test("sprawdz poza zakresem (JPK_PD -> exit 2, jawny komunikat)",
+         kod == 2 and "POZA ZAKRESEM v1" in err and "JPK_PD" in err, "exit=%d" % kod)
+
     # --- podglad ---
     kod, out, err = uruchom(["podglad", f3])
     test("podglad (3)", kod == 0 and "Ewidencja sprzedaży" in out, "exit=%d" % kod)

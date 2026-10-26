@@ -38,10 +38,10 @@ Wszystko poza tym (JPK_PD, PK, K, FA(2), InitUpload) — jawne `die()`
 - **Flaga `--pozwol-siec` (domyślnie OFF)**: lokalny resolver obsługuje
   tylko `crd.gov.pl/*` → `schemat/...`; dla czegokolwiek innego rzuca
   AssertionError (siec niemożliwa, nie „cicho doszło do internetu").
-- **Test suite `testy/uruchom_testy.py`** — 21 testów: sprawdz (4 wersje),
-  zepsuty plik, autodetekcja/sprzeczność --wersja, poza zakresem (InitUpload),
-  podglad, lint, diff, eksport (XLSX otwiera się openpyxl), exit codes,
-  pomiar zero sieci. Wynik: **21 PASS / 0 FAIL**.
+- **Test suite `testy/uruchom_testy.py`** — 22 testy: sprawdz (4 wersje),
+  zepsuty plik, autodetekcja/sprzeczność --wersja, poza zakresem (InitUpload,
+  JPK_PD), podglad, lint, diff, eksport (XLSX otwiera się openpyxl), exit
+  codes, pomiar zero sieci. Wynik: **22 PASS / 0 FAIL**.
 - **Fixture-y w `testy/`**:
   - `fixture-jpk_v7m3.xml`, `fixture-jpk_v7k3.xml` (przykładowy plik MF, wersja (3));
   - `fixture-jpk_v7m2-syntetyk.xml`, `fixture-jpk_v7k2-syntetyk.xml`
@@ -60,6 +60,7 @@ Wszystko poza tym (JPK_PD, PK, K, FA(2), InitUpload) — jawne `die()`
 | diff (2)↔(3) | 1 | lista różnic, znaczniki potwierdzone w schematach |
 | eksport XLSX+PDF | 1 | XLSX otwiera się openpyxl, PDF zapisany |
 | exit codes (2: sprzeczność, poza zakresem) | 2 | 2/2 exit 2 |
+| poza zakresem: JPK_PD (die) | 1 | exit 2, jawny komunikat „poza zakresem v1" |
 | zero sieci | 4 | 4/4: zero żądań http (resolver rzuciłby przy próbie) |
 
 ### Nie robi (jawne)

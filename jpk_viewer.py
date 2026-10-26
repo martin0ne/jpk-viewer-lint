@@ -163,9 +163,10 @@ def etykieta(pole, dokumenty):
 # ---------------------------------------------------------------------------
 # Autodetekcja wersji
 # ---------------------------------------------------------------------------
-def wykryj_wersje(sciezka_pliku):
+def wykryj_wersje(path):
+    path = sciezka_pliku(path)
     try:
-        drzewo = etree.parse(sciezka_pliku, parser_offline())
+        drzewo = etree.parse(path, parser_offline())
     except etree.XMLSyntaxError as e:
         die("plik to nie poprawny XML: %s" % e, 1)
     root = drzewo.getroot()
