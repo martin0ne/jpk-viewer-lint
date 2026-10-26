@@ -1,7 +1,7 @@
 {
   "narzedzie": "jpk-viewer-lint v0.1.2",
   "wejscie": {
-    "plik": "/Users/marcinoldak/projects/jpk-viewer-lint/testy/fixture-jpk_v7m2-syntetyk.xml",
+    "plik": ".testy/fixture-jpk_v7m2-syntetyk.xml",
     "sha256": "4fd0b1700c4896b1d67477090c5047c153b6d6a511c21c9d61cdd6a867efc254"
   },
   "porownanie": "JPK_V7M(2) -> JPK_V7M(3)",
